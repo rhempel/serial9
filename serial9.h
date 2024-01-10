@@ -14,7 +14,12 @@
 
   Based on https://gist.github.com/benVolatiles/c0aa455d4ace0761537818efbaba40ff
 
-  Uses the minimal rign_buffer library.
+  NOTE: For flexibility in the future, consider adding additional escape
+        codes to support:
+
+        1. Additional baud rates
+        2. Disable listen mode when transmitting
+        3. ???
  */
 
 #ifndef SERIAL9_H
@@ -24,14 +29,14 @@
   #define SERIAL9_BUFFER_SIZE (32)
 #endif
 
+enum serial9_state_e { SERIAL9_STATE_IDLE,
+                       SERIAL9_STATE_ESCAPE,
+                       SERIAL9_STATE_HIGH, };
+
 class Serial9 // : public Stream
 {
   private:
     bool _writing;
-
-    enum serial9_state_e { SERIAL9_STATE_IDLE,
-                           SERIAL9_STATE_ESCAPE,
-                           SERIAL9_STATE_HIGH, };
 
     enum serial9_state_e tx_state;
 

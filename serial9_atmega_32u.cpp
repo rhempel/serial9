@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------------
   serial9_atmega_32u.cpp - hardwarte specific support for serial9
-  
+
   Currently only the __AVR_ATmega32U4__ is supported
 */
 #include "Arduino.h"
@@ -36,10 +36,28 @@
   #error This library currently only works with ATmega32U4
 #endif
 
+// UCSRA has three bits that are R/W - we need to be sure we are writing
+// the correct value to the other bits when writing to a specific bit!
+//
+// UCSRA:0 MPCM - Multi-processor Communication Mode - set to 0
+// UCSRA:1 U2X  - USART speed - set depending on baud rate
+// UCSRA:6 TCX  - Transmisison complete - set to CLEAR this bit
+//
+// In our use case, we write to the UCSRA register in two cases:
+//
+// 1. When we set the baud rate
+// 2. When we need to clear the TXC bit
+//
+// If we assume that the baud rate only changes when any transmission
+// is complete, we can preset the ucsra_shadow variable with the correct
+// value and always use the shadow copy when writing to UCSRA.
+//
+static uint8_t ucsra_shadow = bit(TXC);
+
 void serial9_set_baud(uint32_t baud)
 {
   uint16_t baud_setting = (F_CPU / 4 / baud - 1) / 2;
-  UCSRA = 1 << U2X;
+  ucsra_shadow |= bit(U2X);
 
   // hardcoded exception for 57600 for compatibility with the bootloader
   // shipped with the Duemilanove and previous boards and the firmware
@@ -48,9 +66,11 @@ void serial9_set_baud(uint32_t baud)
   // low.
   if (((F_CPU == 16000000UL) && (baud == 57600)) || (baud_setting >4095))
   {
-    UCSRA = 0;
     baud_setting = (F_CPU / 8 / baud - 1) / 2;
+    ucsra_shadow &= ~bit(U2X);
   }
+
+  UCSRA = ucsra_shadow;
 
   // assign the baud_setting, a.k.a. ubrr (USART Baud Rate Register)
   UBRRH = baud_setting >> 8;
@@ -84,7 +104,6 @@ void serial9_stop(void)
 void serial9_talk(void)
 {
   digitalWrite(DE, HIGH);
-  UCSRA |= bit(TXC); // Write a 1 to clear the TXC0 bit (it's not always set)
 }
 
 void serial9_listen(void)
@@ -106,10 +125,12 @@ bool serial9_rx_available(void)
 
 uint16_t serial9_read(void)
 {
-  if ((bool)(UCSRB & bit(RXB8))) {
+  if (!(bool)(UCSRA & bit(RXC))) {
+    return -1;
+  } else if ((bool)(UCSRB & bit(RXB8))) {
     return UDR | bit(9);
   } else {
-    return UDR;          
+    return UDR;
   }
 }
 
@@ -125,11 +146,15 @@ bool serial9_tx_complete(void)
 
 void serial9_write(uint16_t data)
 {
+  if ((bool)(UCSRA & bit(TXC))) {
+      UCSRA = ucsra_shadow;
+  }
+
   if (data & bit(9)) {
-      UCSRB |= bit(TXB8);    
+      UCSRB |= bit(TXB8);
   } else {
       UCSRB &= ~bit(TXB8);
   }
-  
+
   UDR = (uint8_t)(data & 0xff);
 }

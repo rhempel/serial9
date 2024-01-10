@@ -50,7 +50,7 @@ void Serial9::begin(uint32_t baud)
 {
   serial9_set_baud(baud);
   serial9_start();
-  serial9_offline();
+  serial9_listen();
 }
 
 void Serial9::end()
