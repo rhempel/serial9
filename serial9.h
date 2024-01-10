@@ -27,34 +27,21 @@
 class Serial9 // : public Stream
 {
   private:
-    volatile uint8_t * _ubrrh;
-    volatile uint8_t * _ubrrl;
-    volatile uint8_t * _ucsra;
-    volatile uint8_t * _ucsrb;
-    volatile uint8_t * _ucsrc;
-    volatile uint8_t * _udr;
-    uint8_t _errors;
-    bool _written;
+    bool _writing;
 
     enum serial9_state_e { SERIAL9_STATE_IDLE,
                            SERIAL9_STATE_ESCAPE,
                            SERIAL9_STATE_HIGH, };
 
-    enum serial9_state_e rx_state;
+    enum serial9_state_e tx_state;
 
-    write_serial99hi();
   public:
     Serial9();
     ~Serial9();
 
     void begin(uint32_t baud);
     void end(void);
-
-    void write9hi(uint8_t b);
-    void write9lo(uint8_t b);
-
     void loop(void);
-    size_t available(void);
 };
 
 #endif // SERIAL9_H

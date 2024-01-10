@@ -4,16 +4,14 @@
   There are a couple of things to keep in mind ...
 
   1. The only thing this device has to do is transfer characters between
-     the USB serial device and the UART. Therefore we use the Arduino loop()
+     the USB serial port and the UART. Therefore we use the Arduino loop()
      to continuously poll both devices - this eliminates the need for any
      buiffering.
 
-  1. The ATmega32U UART is 9 bit capbable, but the current character MUST
+  2. The ATmega32U UART is 9 bit capbable, but the current character MUST
      be completely finished before changing the state of the 9th bit.
-
-  2. There is no need for buffereing the data from the host - we only read
-     a new character from the host when the
 */
+
 #include "Arduino.h"
 #include "serial9.h"
 
@@ -25,94 +23,39 @@
   #error This project requires an AVR_LEONARDO compatible board (Pro Micro)
 #endif
 
-// Move this to a private H file
-#if defined(__AVR_ATmega32U4__)
-  #define TXC TXC1
-  #define RXC RXC1
-  #define RXEN RXEN1
-  #define TXEN TXEN1
-  #define RXCIE RXCIE1
-  #define UDRIE UDRIE1
-  #define U2X U2X1
-  #define UPE UPE1
-  #define UDRE UDRE1
-  #define UCSZ0 UCSZ10
-  #define UCSZ1 UCSZ11
-  #define UCSZ2 UCSZ12
-  #define TXCIE TXCIE1
-  #define TXB8 TXB81
-  #define RXB8 RXB81
+extern void serial9_set_baud(uint32_t baud);
+extern void serial9_start(void);
+extern void serial9_stop(void);
 
-  #define UBRRH UBRR1H;
-  #define UBRRL UBRR1L;
+extern void serial9_talk(void);
+extern void serial9_listen(void);
+extern void serial9_offline(void);
 
-  #define UCSRA UCSR1A;
-  #define UCSRB UCSR1B;
-  #define UCSRC UCSR1C;
-  #define UDR UDR1;
+extern bool serial9_rx_available(void);
+extern uint16_t serial9_read(void);
 
-  #define RE_ (2)
-  #define DE  (3)
-#else
-  #error This library currently only works with ATmega32U4
-#endif
+extern bool serial9_tx_busy(void);
+extern bool serial9_tx_complete(void);
+extern void serial9_write(uint16_t data);
 
 Serial9::Serial9()
 {
-  _ubrrh = &UBRRH;
-  _ubrrl = &UBRRL;
-  _ucsra = &UCSRA;
-  _ucsrb = &UCSRB;
-  _ucsrc = &UCSRC;
-  _udr = &UDR;
-
-  rx_state = SERIAL9_STATE_IDLE;
+  tx_state = SERIAL9_STATE_IDLE;
+  _writing = false;
 }
 
 Serial9::~Serial9() {}
 
 void Serial9::begin(uint32_t baud)
 {
-  uint16_t baud_setting = (F_CPU / 4 / baud - 1) / 2;
-  *_ucsra = 1 << U2X;
-
-  // hardcoded exception for 57600 for compatibility with the bootloader
-  // shipped with the Duemilanove and previous boards and the firmware
-  // on the 8U2 on the Uno and Mega 2560. Also, The baud_setting cannot
-  // be > 4095, so switch back to non-u2x mode if the baud rate is too
-  // low.
-  if (((F_CPU == 16000000UL) && (baud == 57600)) || (baud_setting >4095))
-  {
-    *_ucsra = 0;
-    baud_setting = (F_CPU / 8 / baud - 1) / 2;
-  }
-
-  // assign the baud_setting, a.k.a. ubrr (USART Baud Rate Register)
-  *_ubrrh = baud_setting >> 8;
-  *_ubrrl = baud_setting;
-
-  // disable interrupts, set 9bit mode, enable rx/tx
-  //  This completely overwrites any previous UCSRB bits
-  *_ucsrb = (1 << UCSZ2) | (1 << TXEN) | (1 << RXEN) | // 9bits, enabled
-            (0 << UDRIE) | (0 << TXCIE) | (0 << RXCIE); // ints off.
-
-  // Enable 9bit size in UCSRC.  Leave the other bits alone (Parity, etc)
-  *_ucsrc |= (1 << UCSZ0) | (1 << UCSZ1);
-
-  _written = false;
-
-  pinMode(DE, OUTPUT);   // Default DE to LOW so we are not transmitting
-  digitalWrite(DE, LOW);
-
-  pinMode(RE_, OUTPUT);   // Default RE_ to LOW so we are always listening
-  digitalWrite(RE_, LOW);
+  serial9_set_baud(baud);
+  serial9_start();
+  serial9_offline();
 }
 
 void Serial9::end()
 {
-  // wait for transmission of outgoing data
-  *_ucsrb &= ~((1 << TXEN) | (1 << RXEN) | // 9bits, enabled
-               (0 << UDRIE) | (0 << TXCIE) | (0 << RXCIE)); // ints off.
+  serial9_stop();
 }
 
 #define SERIAL9_ESCAPE (0xff)
@@ -128,96 +71,88 @@ void Serial9::loop(void)
   // in the hardware serial device, and sending the data back to the
   // host using the USB9_ESCAPE sequence if necessary.
 
-  uint8_t status = *_ucsra;
-
   // A character has been received by the UART
 
-  if (status & (1 << RXC)) {
+  if (serial9_rx_available()) {
 
     // Check if the 9th bit is set and send the possibly ESCAPED data
     // back to the host
 
-    bool bit9_hi = (0 != (*_ucsrb & (1 << RXB8)));
-    uint8_t data = *_udr;
+    uint16_t rx_data = serial9_read();
 
-    if (bit9_hi) {
+    if ((bool)(rx_data & bit(9))) {
       Serial.write(SERIAL9_ESCAPE);
       Serial.write(SERIAL9_HIGH);
-      Serial.write(data);
-    } else if (SERIAL9_ESCAPE == data) {
+      Serial.write((uint8_t)(rx_data & 0xff));
+    } else if (SERIAL9_ESCAPE == rx_data) {
       Serial.write(SERIAL9_ESCAPE);
-      Serial.write(data);
+      Serial.write((uint8_t)(rx_data & 0xff));
     } else {
-      Serial.write(data);
+      Serial.write((uint8_t)(rx_data & 0xff));
     }
 
   // The UART is NOT ready to send a character, do nothing
 
-  } else if (0 == (status & (1 << UDRE))) {
+  } else if (serial9_tx_busy()) {
 
-  // The UART is ready to send a character, is there Serial data?
+  // The UART is ready to send a character, is there USB Serial data?
 
   } else if (Serial.available() > 0) {
 
-    uint8_t b = Serial.read();
+    uint16_t tx_data = Serial.read();
 
     // Force DE high, we will be writing a character soon
-    if (_written) {
+    if (_writing) {
       // Do nothing
     } else {
-        _written = true;
-        *_ucsra |= (1 << TXC); // Write a 1 to clear the TXC0 bit
-        digitalWrite(DE, HIGH);
+        _writing = true;
+        serial9_talk();
     }
 
-    switch (rx_state) {
+    switch (tx_state) {
 
     case SERIAL9_STATE_IDLE:
 
-      if (SERIAL9_ESCAPE == b) {
-        rx_state = SERIAL9_STATE_ESCAPE;
+      if (SERIAL9_ESCAPE == tx_data) {
+        tx_state = SERIAL9_STATE_ESCAPE;
 
       } else {
-        // It's a regular character, just send it
-        *_ucsrb &= ~(1 << TXB8);
-        *_udr = b;
+        serial9_write(tx_data);
       }
       break;
 
     case SERIAL9_STATE_ESCAPE:
 
-      if (SERIAL9_HIGH == b) {
-        rx_state = SERIAL9_STATE_HIGH;
+      if (SERIAL9_HIGH == tx_data) {
+        tx_state = SERIAL9_STATE_HIGH;
 
-      } else if (SERIAL9_ESCAPE == b) {
+      } else if (SERIAL9_ESCAPE == tx_data) {
         // It's an escaped ESCAPE character, just send it
-        rx_state = SERIAL9_STATE_IDLE;
-        *_ucsrb &= ~(1 << TXB8);
-        *_udr = b;
+        tx_state = SERIAL9_STATE_IDLE;
+        serial9_write(tx_data);
 
       } else {
         // illegal character - ignore it
-        rx_state = SERIAL9_STATE_IDLE;
+        tx_state = SERIAL9_STATE_IDLE;
       }
       break;
 
      case SERIAL9_STATE_HIGH:
        // It's a character that should be sent with the 9th bit high
-       rx_state = SERIAL9_STATE_IDLE;
-       *_ucsrb |= (1 << TXB8);
-       *_udr = b;
+       tx_state = SERIAL9_STATE_IDLE;
+       serial9_write(tx_data | bit(9));
        break;
      }
 
   // The UART has completed the current character and there are no
   // incoming charaters availablke from the USB - force DE low
 
-  } else if (0 != (status & (1 << TXC))) {
+  } else if (serial9_tx_complete()) {
 
-    // Force DE high, we will be writing a character soon
-    if (_written) {
-      _written = false;
-      digitalWrite(DE, LOW);
+    // Force listen mode, we are no longer writing
+    if (_writing) {
+      _writing = false;
+      serial9_listen();
     } else {
       // Do nothing
     }
