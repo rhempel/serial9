@@ -10,6 +10,15 @@
 
   2. The ATmega32U UART is 9 bit capbable, but the current character MUST
      be completely finished before changing the state of the 9th bit.
+
+  3. The Arduino USB-CDC librbary uses a blocking send when returning
+     data back to the host. To make things worse, when there are no more
+     endpoints available, the send function BLOCKS with a timeout of
+     250 msec, which results in no characters being transmitted during
+     this time.
+
+     To prevent this from happening, the host MUST read the incoming
+     serial port as often as possible.
 */
 
 #include "Arduino.h"
