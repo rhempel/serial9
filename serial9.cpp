@@ -67,8 +67,22 @@ void Serial9::end()
   serial9_stop();
 }
 
+// Here is where the escape protocol is defined ...
+
 #define SERIAL9_ESCAPE (0xff)
-#define SERIAL9_HIGH   (0x01)
+
+#define SERIAL9_HIGH (0x01) // The next byte is sent with bit9 high
+
+#define SERIAL9_BAUD_300 (0x10)
+#define SERIAL9_BAUD_600 (0x11)
+#define SERIAL9_BAUD_1200 (0x12)
+#define SERIAL9_BAUD_2400 (0x13)
+#define SERIAL9_BAUD_4800 (0x14)
+#define SERIAL9_BAUD_9600 (0x15)
+#define SERIAL9_BAUD_19200 (0x16)
+#define SERIAL9_BAUD_38400 (0x17)
+#define SERIAL9_BAUD_57600 (0x18)
+#define SERIAL9_BAUD_115200 (0x19)
 
 // NOTE: Break this long loop handler into separate components
 
@@ -132,17 +146,50 @@ void Serial9::loop(void)
 
     case SERIAL9_STATE_ESCAPE:
 
+      // Most of the time the next state will be SERIAL9_STATE_IDLE
+      // so we set it here - override if necessary!
+      //
+      tx_state = SERIAL9_STATE_IDLE;
+
       if (SERIAL9_HIGH == tx_data) {
         tx_state = SERIAL9_STATE_HIGH;
 
       } else if (SERIAL9_ESCAPE == tx_data) {
         // It's an escaped ESCAPE character, just send it
-        tx_state = SERIAL9_STATE_IDLE;
         serial9_write(tx_data);
+
+      } else if (SERIAL9_BAUD_300 == tx_data) {
+        serial9_set_baud(300);
+
+      } else if (SERIAL9_BAUD_600 == tx_data) {
+        serial9_set_baud(600);
+
+      } else if (SERIAL9_BAUD_1200 == tx_data) {
+        serial9_set_baud(1200);
+
+      } else if (SERIAL9_BAUD_2400 == tx_data) {
+        serial9_set_baud(2400);
+
+      } else if (SERIAL9_BAUD_4800 == tx_data) {
+        serial9_set_baud(4800);
+
+      } else if (SERIAL9_BAUD_9600 == tx_data) {
+        serial9_set_baud(9600);
+
+      } else if (SERIAL9_BAUD_19200 == tx_data) {
+        serial9_set_baud(19200);
+
+      } else if (SERIAL9_BAUD_38400 == tx_data) {
+        serial9_set_baud(38400);
+
+      } else if (SERIAL9_BAUD_57600 == tx_data) {
+        serial9_set_baud(57600);
+
+      } else if (SERIAL9_BAUD_115200 == tx_data) {
+        serial9_set_baud(115200);
 
       } else {
         // illegal character - ignore it
-        tx_state = SERIAL9_STATE_IDLE;
       }
       break;
 
