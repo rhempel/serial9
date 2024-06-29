@@ -1,0 +1,5 @@
+# Ignore all generated files
+
+build/*
+html/*
+**/__pycache__/*
