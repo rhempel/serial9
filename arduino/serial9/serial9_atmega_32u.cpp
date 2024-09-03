@@ -75,6 +75,9 @@ void serial9_set_baud(uint32_t baud)
   // assign the baud_setting, a.k.a. ubrr (USART Baud Rate Register)
   UBRRH = baud_setting >> 8;
   UBRRL = baud_setting;
+
+  digitalWrite(DE, LOW);
+  digitalWrite(RE_, LOW);
 }
 
 void serial9_start(void)

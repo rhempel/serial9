@@ -69,6 +69,9 @@ void Serial9::end()
 #define SERIAL9_ESCAPE (0xff)
 #define SERIAL9_HIGH (0x01) // The next byte is sent with BIT9 high
 
+#define SERIAL9_8BIT (0x08) // Set the UART to 8 bit mode
+#define SERIAL9_9BIT (0x09) // Set the UART to 9 bit mode (default)
+
 #define SERIAL9_BAUD_300 (0x10)
 #define SERIAL9_BAUD_600 (0x11)
 #define SERIAL9_BAUD_1200 (0x12)
@@ -126,14 +129,15 @@ void Serial9::loop(void)
 
     uint16_t tx_data = Serial.read();
 
-    // Force the interface into talk mode, we will be writing
-    // a character soon
+    // Force the interface into talk mode if we are NOT already _writing.
+    // Do NOT force the _writing status until we actually start writing
+    // something - otherwise we get confused when setting baud rate or
+    // bit width
     //
     if (_writing) {
         // Do nothing
         DO_NOTHING;
     } else {
-        _writing = true;
         serial9_talk();
     }
 
@@ -145,6 +149,7 @@ void Serial9::loop(void)
         tx_state = SERIAL9_STATE_ESCAPE;
 
       } else {
+        _writing = true;
         serial9_write(tx_data);
       }
       break;
@@ -161,6 +166,7 @@ void Serial9::loop(void)
 
       } else if (SERIAL9_ESCAPE == tx_data) {
         // It's an escaped ESCAPE character, just send it
+        _writing = true;
         serial9_write(tx_data);
 
       } else if (SERIAL9_BAUD_300 == tx_data) {
@@ -202,6 +208,7 @@ void Serial9::loop(void)
     case SERIAL9_STATE_HIGH:
         // It's a character that should be sent with the 9th bit high
         tx_state = SERIAL9_STATE_IDLE;
+        _writing = true;
         serial9_write(tx_data | SERIAL9_BIT9);
         break;
 
@@ -209,7 +216,6 @@ void Serial9::loop(void)
        // Weird state when we got this character, ignore it and
        // force the IDLE state
        //
-       DO_NOTHING;
        tx_state = SERIAL9_STATE_IDLE;
     }
 
