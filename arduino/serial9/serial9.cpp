@@ -27,6 +27,9 @@
 #include "serial9.h"
 #include "Arduino.h"
 
+extern void serial9_set_8bit_mode(void);
+extern void serial9_set_9bit_mode(void);
+
 extern void serial9_set_baud(uint32_t baud);
 extern void serial9_start(void);
 extern void serial9_stop(void);
@@ -53,6 +56,7 @@ Serial9::~Serial9() {}
 void Serial9::begin(uint32_t baud)
 {
   serial9_set_baud(baud);
+  serial9_set_9bit_mode();
   serial9_start();
   serial9_listen();
 }
@@ -129,18 +133,6 @@ void Serial9::loop(void)
 
     uint16_t tx_data = Serial.read();
 
-    // Force the interface into talk mode if we are NOT already _writing.
-    // Do NOT force the _writing status until we actually start writing
-    // something - otherwise we get confused when setting baud rate or
-    // bit width
-    //
-    if (_writing) {
-        // Do nothing
-        DO_NOTHING;
-    } else {
-        serial9_talk();
-    }
-
     switch (tx_state) {
 
     case SERIAL9_STATE_IDLE:
@@ -150,6 +142,7 @@ void Serial9::loop(void)
 
       } else {
         _writing = true;
+        serial9_talk();
         serial9_write(tx_data);
       }
       break;
@@ -167,7 +160,14 @@ void Serial9::loop(void)
       } else if (SERIAL9_ESCAPE == tx_data) {
         // It's an escaped ESCAPE character, just send it
         _writing = true;
+        serial9_talk();
         serial9_write(tx_data);
+
+      } else if (SERIAL9_8BIT == tx_data) {
+        serial9_set_8bit_mode();
+
+      } else if (SERIAL9_9BIT == tx_data) {
+        serial9_set_9bit_mode();
 
       } else if (SERIAL9_BAUD_300 == tx_data) {
         serial9_set_baud(300);
@@ -201,7 +201,7 @@ void Serial9::loop(void)
 
       } else {
         // illegal character - ignore it
-        tx_state = SERIAL9_STATE_IDLE;
+//      tx_state = SERIAL9_STATE_IDLE;
       }
       break;
 
@@ -209,6 +209,7 @@ void Serial9::loop(void)
         // It's a character that should be sent with the 9th bit high
         tx_state = SERIAL9_STATE_IDLE;
         _writing = true;
+        serial9_talk();
         serial9_write(tx_data | SERIAL9_BIT9);
         break;
 

@@ -54,6 +54,16 @@
 //
 static uint8_t ucsra_shadow = bit(TXC);
 
+void serial9_set_8bit_mode(void)
+{
+  UCSRB &= ~bit(UCSZ2);
+}
+
+void serial9_set_9bit_mode(void)
+{
+  UCSRB |= bit(UCSZ2);
+}
+
 void serial9_set_baud(uint32_t baud)
 {
   uint16_t baud_setting = (F_CPU / 4 / baud - 1) / 2;
@@ -84,10 +94,10 @@ void serial9_start(void)
 {
   // Disable interrupts, set 9bit mode, enable rx/tx - this completely
   // overwrites any previous UCSRB bits
-  UCSRB = bit(UCSZ2) | bit(TXEN) | bit(RXEN);
+  UCSRB |= bit(TXEN) | bit(RXEN);
 
-  // Enable 9bit size in UCSRC and leave the other bits alone (Parity, etc)
-  UCSRC |= bit(UCSZ0) | bit(UCSZ1);
+  // Enable 8bit size in UCSRC and leave the other bits alone (Parity, etc)
+  UCSRC = bit(UCSZ0) | bit(UCSZ1);
 
   // Set the DE and RE_ pins to output
   pinMode(DE, OUTPUT);
