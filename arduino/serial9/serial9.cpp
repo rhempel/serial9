@@ -6,7 +6,7 @@
   1. The only thing this device has to do is transfer characters between
      the USB serial port and the UART. Therefore we use the Arduino loop()
      to continuously poll both devices - this eliminates the need for any
-     buiffering.
+     buffering.
 
   2. The ATmega32U UART is 9 bit capbable, but the current character MUST
      be completely finished before changing the state of the 9th bit.
@@ -93,12 +93,32 @@ void Serial9::end()
 
 void Serial9::loop(void)
 {
+  // UPDATE THIS COMMENT - IT IS INCORRDCT
+
   // Highest priority is checking to see if a character is available
   // in the hardware serial device, and sending the data back to the
   // host using the USB9_ESCAPE sequence if necessary.
 
-  // A character has been received by the UART
+  // The UART has completed the current character and there are no
+  // incoming charaters available from the USB - force the interface
+  // into the listen state if we were writing
 
+  if (serial9_tx_complete() && !serial9_rx_available()) {
+
+    // Force listen mode, we are no longer writing
+    if (_writing) {
+      _writing = false;
+      serial9_listen();
+    } else {
+      // Do nothing
+      DO_NOTHING;
+    }
+
+//    tx_state = SERIAL9_STATE_IDLE;
+  }
+
+  // A character has been received by the UART
+  //
   if (serial9_rx_available()) {
 
     // Check if the 9th bit is set and send the possibly ESCAPED data
@@ -123,7 +143,7 @@ void Serial9::loop(void)
 
   } else if (serial9_tx_busy()) {
     // No point getting more from Serial if we are still
-    // busy transmitting on serail9 :-)
+    // busy transmitting on serial9 :-)
     //
     DO_NOTHING;
 
